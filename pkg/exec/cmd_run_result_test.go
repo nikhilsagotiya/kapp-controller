@@ -119,3 +119,99 @@ func Test_WithTruncatedStrings(t *testing.T) {
 	assert.Equal(t, r.Finished, got.Finished, "Finished must be preserved")
 	assert.Equal(t, r.Error, got.Error, "Error must be preserved")
 }
+
+func Test_RedactSecrets(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "no credentials, unchanged",
+			input:    "This is normal output",
+			expected: "This is normal output",
+		},
+		{
+			name:     "empty string unchanged",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "simple https URL with basic auth",
+			input:    "https://user:password@example.com/path",
+			expected: "https://[REDACTED]@example.com/path",
+		},
+		{
+			name:     "simple http URL with basic auth",
+			input:    "http://user:token@registry.io",
+			expected: "http://[REDACTED]@registry.io",
+		},
+		{
+			name:     "GOPROXY with auth",
+			input:    "GOPROXY=https://user:token@proxy.example.com",
+			expected: "GOPROXY=https://[REDACTED]@proxy.example.com",
+		},
+		{
+			name:     "git URL with credentials",
+			input:    "git clone https://myuser:mypass@github.com/repo.git",
+			expected: "git clone https://[REDACTED]@github.com/repo.git",
+		},
+		{
+			name:     "password containing @ symbol",
+			input:    "https://user:pass@word@example.com/path",
+			expected: "https://[REDACTED]@example.com/path",
+		},
+		{
+			name:     "multiple URLs in output, all redacted",
+			input:    "fetching https://user:pass1@host1.com and https://user2:pass2@host2.com",
+			expected: "fetching https://[REDACTED]@host1.com and https://[REDACTED]@host2.com",
+		},
+		{
+			name:     "URL with only username (no password)",
+			input:    "https://user@example.com/path",
+			expected: "https://[REDACTED]@example.com/path",
+		},
+		{
+			name:     "multiline output with credentials",
+			input:    "Error fetching\nhttps://user:password@example.com\nConnection failed",
+			expected: "Error fetching\nhttps://[REDACTED]@example.com\nConnection failed",
+		},
+		{
+			name:     "URL with special characters in password",
+			input:    "https://user:p%40ss!word#$@example.com",
+			expected: "https://[REDACTED]@example.com",
+		},
+		{
+			name:     "ftp scheme also supported",
+			input:    "ftp://admin:secret@ftp.example.com/files",
+			expected: "ftp://[REDACTED]@ftp.example.com/files",
+		},
+		{
+			name:     "custom scheme with +/. characters",
+			input:    "custom+scheme://user:pass@host.com",
+			expected: "custom+scheme://[REDACTED]@host.com",
+		},
+		{
+			name:     "URL-like text without scheme is not redacted",
+			input:    "user:password@example.com",
+			expected: "user:password@example.com",
+		},
+		{
+			name:     "text containing @ but not a URL",
+			input:    "email: test@example.com not redacted",
+			expected: "email: test@example.com not redacted",
+		},
+		{
+			name:     "whitespace stops URL matching",
+			input:    "https://user:pass@host.com and some other text",
+			expected: "https://[REDACTED]@host.com and some other text",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := RedactSecrets(tc.input)
+			assert.Equal(t, tc.expected, got)
+		})
+	}
+}
